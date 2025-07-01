@@ -9,7 +9,6 @@ import requests
 import threading
 from kivy.clock import Clock
 from kivy.uix.floatlayout import FloatLayout
-from kivy.utils import platform
 # type: ignore
 # برای دریافت لوکیشن فعلی
 try:
@@ -183,8 +182,6 @@ class MainScreen(BoxLayout):
         self.send_btn.disabled = False
         self.send_btn.text = "Send location to server"
 
-
-
 class MapScreen(Screen):
     def __init__(self, main_screen, **kwargs):
         super().__init__(**kwargs)
@@ -204,7 +201,7 @@ class MapScreen(Screen):
         )
         self.marker = None
         self.selected_latlon = None
-        self.mapview.bind(on_touch_down=self.on_map_touch)  # type: ignore
+        self.mapview.bind(on_touch_up=self.on_map_touch)  # type: ignore
         map_container.add_widget(self.mapview)
 
         # دکمه "Find Me" روی نقشه (گوشه پایین راست)
@@ -217,7 +214,8 @@ class MapScreen(Screen):
         )
         self.find_me_btn.bind(on_press=self.center_on_current_location)  # type: ignore
         map_container.add_widget(self.find_me_btn)
-# دکمه برگشت بالای نقشه
+
+        # دکمه برگشت بالای نقشه
         self.back_btn = Button(
             text='Back',
             size_hint=(None, None),
@@ -225,7 +223,7 @@ class MapScreen(Screen):
             pos_hint={'x': 0.02, 'top': 0.98},
             background_color=(1, 0.5, 0.2, 1)
         )
-        self.back_btn.bind(on_press=self.go_back)  # type: ignore
+        self.back_btn.bind(on_press=self.go_back)    # type: ignore
         map_container.add_widget(self.back_btn)
 
         layout.add_widget(map_container)
@@ -244,16 +242,17 @@ class MapScreen(Screen):
         self.add_widget(layout)
 
     def on_map_touch(self, instance, touch):
+        # فقط اگر روی mapview لمس شد
         if not self.mapview.collide_point(*touch.pos):
             return False
-        # فقط لمس تک انگشتی و بدون حرکت زیاد
-        if len(touch.device.touch_ids) > 1:
+        # فقط لمس تک انگشتی و بدون حرکت زیاد (tap)
+        if hasattr(touch, 'is_mouse_scrolling') and touch.is_mouse_scrolling:
             return False
-        if touch.is_double_tap:
+        if hasattr(touch, 'button') and touch.button != 'left':
             return False
-        if abs(touch.dx) > 5 or abs(touch.dy) > 5:
+        if hasattr(touch, 'is_double_tap') and touch.is_double_tap:
             return False
-        if touch.is_mouse_scrolling:
+        if abs(touch.ox - touch.x) > 10 or abs(touch.oy - touch.y) > 10:
             return False
         # فقط tap ساده
         map_x = touch.x - self.mapview.x
@@ -265,8 +264,8 @@ class MapScreen(Screen):
         self.mapview.add_marker(self.marker)
         self.selected_latlon = (lat, lon)
         self.confirm_btn.disabled = False
-        return True
-        
+        return False  # اجازه بده رفتار پیش‌فرض نقشه (زوم و اسکرول) فعال بماند
+
     def confirm_location(self, instance):
         if self.selected_latlon:
             lat, lon = self.selected_latlon
@@ -275,21 +274,16 @@ class MapScreen(Screen):
         self.parent.current = 'main'
 
     def center_on_current_location(self, instance):
+        # اگر GPS فعال است، از آن استفاده کن
         if GPS_AVAILABLE:
             try:
                 gps.configure(on_location=self._center_on_location)  # type: ignore
                 gps.start()  # type: ignore
-            except Exception as e:
-                self.show_status("GPS کار نمی‌کند: " + str(e))
-                threading.Thread(target=self._get_ip_location).start()
+            except Exception:
+                pass
         else:
-            self.show_status("GPS در دسترس نیست. از موقعیت IP استفاده می‌شود.")
+            # اگر GPS نبود، از IP location استفاده کن
             threading.Thread(target=self._get_ip_location).start()
-
-    def show_status(self, msg):
-        from kivy.uix.popup import Popup
-        popup = Popup(title='وضعیت', content=Label(text=msg), size_hint=(0.8, 0.3))
-        popup.open()
 
     def _center_on_location(self, **kwargs):
         lat = kwargs.get('lat')
@@ -312,17 +306,14 @@ class MapScreen(Screen):
     def _center_map(self, lat, lon):
         if lat is not None and lon is not None and self.mapview is not None:
             self.mapview.center_on(lat, lon)  # type: ignore
-            # اضافه کردن مارکر روی لوکیشن فعلی
-            if self.marker:
-                self.mapview.remove_marker(self.marker)
-            self.marker = MapMarker(lat=lat, lon=lon)
-            self.mapview.add_marker(self.marker)
-            self.selected_latlon = (lat, lon)
-            self.confirm_btn.disabled = False
 
     def go_back(self, instance):
         self.parent.transition = SlideTransition(direction='right')
         self.parent.current = 'main'
+
+    def on_enter(self):
+        # وقتی صفحه نقشه باز می‌شود، به طور خودکار روی لوکیشن فعلی کاربر مرکز شود
+        self.center_on_current_location(None)
 
 class MainScreenWrapper(Screen):
     def __init__(self, screen_manager, **kwargs):
@@ -331,10 +322,6 @@ class MainScreenWrapper(Screen):
         self.add_widget(self.main_screen)
 
 class PassengerApp(App):
-    if platform == 'android':
-        from android.permissions import request_permissions, Permission # type: ignore
-        request_permissions([Permission.ACCESS_COARSE_LOCATION, Permission.ACCESS_FINE_LOCATION])
-        
     def build(self):
         self.screen_manager = ScreenManager()
         
