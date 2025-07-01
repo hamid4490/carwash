@@ -182,6 +182,8 @@ class MainScreen(BoxLayout):
         self.send_btn.disabled = False
         self.send_btn.text = "Send location to server"
 
+
+
 class MapScreen(Screen):
     def __init__(self, main_screen, **kwargs):
         super().__init__(**kwargs)
@@ -214,6 +216,16 @@ class MapScreen(Screen):
         )
         self.find_me_btn.bind(on_press=self.center_on_current_location)  # type: ignore
         map_container.add_widget(self.find_me_btn)
+# دکمه برگشت بالای نقشه
+        self.back_btn = Button(
+            text='Back',
+            size_hint=(None, None),
+            size=(80, 40),
+            pos_hint={'x': 0.02, 'top': 0.98},
+            background_color=(1, 0.5, 0.2, 1)
+        )
+        self.back_btn.bind(on_press=self.go_back)  # type: ignore
+        map_container.add_widget(self.back_btn)
 
         layout.add_widget(map_container)
 
@@ -231,8 +243,8 @@ class MapScreen(Screen):
         self.add_widget(layout)
 
     def on_map_touch(self, instance, touch):
-        if hasattr(touch, 'button') and touch.button != 'left':
-            return False
+        # if hasattr(touch, 'button') and touch.button != 'left':
+        #     return False
         if not self.mapview.collide_point(*touch.pos):
             return False
 
@@ -257,17 +269,21 @@ class MapScreen(Screen):
         self.parent.current = 'main'
 
     def center_on_current_location(self, instance):
-        # اگر GPS فعال است، از آن استفاده کن
         if GPS_AVAILABLE:
             try:
                 gps.configure(on_location=self._center_on_location)  # type: ignore
                 gps.start()  # type: ignore
-            except Exception:
-                pass
+            except Exception as e:
+                self.show_status("Gps does not work: " + str(e))
         else:
-            # اگر GPS نبود، از IP location استفاده کن
+            self.show_status("GPS is not available. Using IP location.")
             threading.Thread(target=self._get_ip_location).start()
 
+    def show_status(self, msg):
+        from kivy.uix.popup import Popup
+        popup = Popup(title='Status', content=Label(text=msg), size_hint=(0.8, 0.3))
+        popup.open()
+        
     def _center_on_location(self, **kwargs):
         lat = kwargs.get('lat')
         lon = kwargs.get('lon')
@@ -289,6 +305,10 @@ class MapScreen(Screen):
     def _center_map(self, lat, lon):
         if lat is not None and lon is not None and self.mapview is not None:
             self.mapview.center_on(lat, lon)  # type: ignore
+
+    def go_back(self, instance):
+        self.parent.transition = SlideTransition(direction='right')
+        self.parent.current = 'main'
 
 class MainScreenWrapper(Screen):
     def __init__(self, screen_manager, **kwargs):
