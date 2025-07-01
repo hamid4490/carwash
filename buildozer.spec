@@ -7,7 +7,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 
 # (list) Application requirements
-requirements = python3,kivy,plyer
+requirements = python3,kivy,requests,plyer,kivy_garden.mapview,certifi
 
 # (str) Custom source folders for requirements
 # (Separate multiple paths with commas)
