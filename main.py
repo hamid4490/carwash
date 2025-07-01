@@ -55,6 +55,14 @@ class MainScreen(BoxLayout):
         self.add_widget(self.location_label)
 
         # دکمه دریافت لوکیشن فعلی
+        self.get_location_btn = Button(
+            text='Get my current location',
+            size_hint_y=None, 
+            height=50,
+            background_color=(0.8, 0.4, 0.2, 1)
+        )
+        self.get_location_btn.bind(on_press=self.get_current_location)  # type: ignore
+        self.add_widget(self.get_location_btn)
 
         # دکمه انتخاب لوکیشن
         self.select_location_btn = Button(
@@ -242,7 +250,6 @@ class MapScreen(Screen):
         self.add_widget(layout)
 
     def on_map_touch(self, instance, touch):
-        # فقط اگر روی mapview لمس شد
         if not self.mapview.collide_point(*touch.pos):
             return False
         # فقط لمس تک انگشتی و بدون حرکت زیاد (tap)
@@ -258,13 +265,21 @@ class MapScreen(Screen):
         map_x = touch.x - self.mapview.x
         map_y = touch.y - self.mapview.y
         lat, lon = self.mapview.get_latlon_at(map_x, map_y)
+        self._place_marker(lat, lon)
+        return False  # اجازه بده رفتار پیش‌فرض نقشه (زوم و اسکرول) فعال بماند
+
+    def _center_map(self, lat, lon):
+        if lat is not None and lon is not None and self.mapview is not None:
+            self.mapview.center_on(lat, lon)  # type: ignore
+            self._place_marker(lat, lon)
+
+    def _place_marker(self, lat, lon):
         if self.marker:
             self.mapview.remove_marker(self.marker)
         self.marker = MapMarker(lat=lat, lon=lon)
         self.mapview.add_marker(self.marker)
         self.selected_latlon = (lat, lon)
         self.confirm_btn.disabled = False
-        return False  # اجازه بده رفتار پیش‌فرض نقشه (زوم و اسکرول) فعال بماند
 
     def confirm_location(self, instance):
         if self.selected_latlon:
@@ -302,10 +317,6 @@ class MapScreen(Screen):
                 Clock.schedule_once(lambda dt: self._center_map(lat, lon))
         except Exception:
             pass
-
-    def _center_map(self, lat, lon):
-        if lat is not None and lon is not None and self.mapview is not None:
-            self.mapview.center_on(lat, lon)  # type: ignore
 
     def go_back(self, instance):
         self.parent.transition = SlideTransition(direction='right')
