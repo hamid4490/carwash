@@ -9,6 +9,7 @@ import requests
 import threading
 from kivy.clock import Clock
 from kivy.uix.floatlayout import FloatLayout
+from kivy.utils import platform
 # type: ignore
 # برای دریافت لوکیشن فعلی
 try:
@@ -243,16 +244,21 @@ class MapScreen(Screen):
         self.add_widget(layout)
 
     def on_map_touch(self, instance, touch):
-        # if hasattr(touch, 'button') and touch.button != 'left':
-        #     return False
         if not self.mapview.collide_point(*touch.pos):
             return False
-
-        # تبدیل مختصات نسبت به خود mapview
+        # فقط لمس تک انگشتی و بدون حرکت زیاد
+        if len(touch.device.touch_ids) > 1:
+            return False
+        if touch.is_double_tap:
+            return False
+        if abs(touch.dx) > 5 or abs(touch.dy) > 5:
+            return False
+        if touch.is_mouse_scrolling:
+            return False
+        # فقط tap ساده
         map_x = touch.x - self.mapview.x
         map_y = touch.y - self.mapview.y
         lat, lon = self.mapview.get_latlon_at(map_x, map_y)
-
         if self.marker:
             self.mapview.remove_marker(self.marker)
         self.marker = MapMarker(lat=lat, lon=lon)
@@ -260,7 +266,7 @@ class MapScreen(Screen):
         self.selected_latlon = (lat, lon)
         self.confirm_btn.disabled = False
         return True
-
+        
     def confirm_location(self, instance):
         if self.selected_latlon:
             lat, lon = self.selected_latlon
@@ -306,6 +312,13 @@ class MapScreen(Screen):
     def _center_map(self, lat, lon):
         if lat is not None and lon is not None and self.mapview is not None:
             self.mapview.center_on(lat, lon)  # type: ignore
+            # اضافه کردن مارکر روی لوکیشن فعلی
+            if self.marker:
+                self.mapview.remove_marker(self.marker)
+            self.marker = MapMarker(lat=lat, lon=lon)
+            self.mapview.add_marker(self.marker)
+            self.selected_latlon = (lat, lon)
+            self.confirm_btn.disabled = False
 
     def go_back(self, instance):
         self.parent.transition = SlideTransition(direction='right')
@@ -318,6 +331,10 @@ class MainScreenWrapper(Screen):
         self.add_widget(self.main_screen)
 
 class PassengerApp(App):
+    if platform == 'android':
+        from android.permissions import request_permissions, Permission # type: ignore
+        request_permissions([Permission.ACCESS_COARSE_LOCATION, Permission.ACCESS_FINE_LOCATION])
+        
     def build(self):
         self.screen_manager = ScreenManager()
         
