@@ -274,16 +274,17 @@ class MapScreen(Screen):
                 gps.configure(on_location=self._center_on_location)  # type: ignore
                 gps.start()  # type: ignore
             except Exception as e:
-                self.show_status("Gps does not work: " + str(e))
+                self.show_status("GPS کار نمی‌کند: " + str(e))
+                threading.Thread(target=self._get_ip_location).start()
         else:
-            self.show_status("GPS is not available. Using IP location.")
+            self.show_status("GPS در دسترس نیست. از موقعیت IP استفاده می‌شود.")
             threading.Thread(target=self._get_ip_location).start()
 
     def show_status(self, msg):
         from kivy.uix.popup import Popup
-        popup = Popup(title='Status', content=Label(text=msg), size_hint=(0.8, 0.3))
+        popup = Popup(title='وضعیت', content=Label(text=msg), size_hint=(0.8, 0.3))
         popup.open()
-        
+
     def _center_on_location(self, **kwargs):
         lat = kwargs.get('lat')
         lon = kwargs.get('lon')
