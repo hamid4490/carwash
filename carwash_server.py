@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
@@ -13,6 +13,8 @@ app = Flask(__name__)
 CORS(app)
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
+PHOTO_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), 'photos')
+os.makedirs(PHOTO_UPLOAD_FOLDER, exist_ok=True)
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.DictCursor)
@@ -21,102 +23,132 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
+        CREATE TABLE IF NOT EXISTS passengers (
             id UUID PRIMARY KEY,
-            phone TEXT UNIQUE,
             name TEXT,
-            user_type TEXT,
-            status TEXT DEFAULT 'offline',
+            phone TEXT UNIQUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS drivers (
+            id UUID PRIMARY KEY,
+            name TEXT,
+            id_card_number TEXT,
+            address TEXT,
+            phone TEXT UNIQUE,
+            photo TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     ''')
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS requests (
             id UUID PRIMARY KEY,
-            passenger_id UUID,
-            driver_id UUID,
+            passenger_id UUID REFERENCES passengers(id),
+            driver_id UUID REFERENCES drivers(id),
             lat DOUBLE PRECISION,
             lon DOUBLE PRECISION,
             status TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             accepted_at TIMESTAMP,
-            completed_at TIMESTAMP,
-            phone TEXT,
-            FOREIGN KEY (passenger_id) REFERENCES users (id),
-            FOREIGN KEY (driver_id) REFERENCES users (id)
-        );
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS driver_locations (
-            driver_id UUID PRIMARY KEY,
-            lat DOUBLE PRECISION,
-            lon DOUBLE PRECISION,
-            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (driver_id) REFERENCES users (id)
+            completed_at TIMESTAMP
         );
     ''')
     conn.commit()
     conn.close()
 
-# API برای ثبت‌نام کاربر
-@app.route('/register', methods=['POST'])
-def register():
+# --- Passenger Registration ---
+@app.route('/register/passenger', methods=['POST'])
+def register_passenger():
     data = request.json
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-    user_id = str(uuid.uuid4())
-    
+    passenger_id = str(uuid.uuid4())
     conn = get_db()
     cursor = conn.cursor()
-    
     try:
         cursor.execute('''
-            INSERT INTO users (id, phone, name, user_type)
-            VALUES (%s, %s, %s, %s)
-        ''', (user_id, data['phone'], data['name'], data['user_type']))
-        
+            INSERT INTO passengers (id, name, phone)
+            VALUES (%s, %s, %s)
+        ''', (passenger_id, data['name'], data['phone']))
         conn.commit()
-        
-        return jsonify({
-            'status': 'ok',
-            'user_id': user_id,
-            'message': 'User registered successfully'
-        })
+        return jsonify({'status': 'ok', 'user_id': passenger_id, 'message': 'Passenger registered successfully'})
     except psycopg2.IntegrityError:
-        return jsonify({
-            'status': 'error',
-            'message': 'Phone number already exists'
-        }), 400
+        return jsonify({'status': 'error', 'message': 'Phone number already exists'}), 400
     finally:
         conn.close()
 
-# API برای ورود کاربر
-@app.route('/login', methods=['POST'])
-def login():
+# --- Driver Registration (with photo upload) ---
+@app.route('/register/driver', methods=['POST'])
+def register_driver():
+    name = request.form.get('name')
+    id_card_number = request.form.get('id_card_number')
+    address = request.form.get('address')
+    phone = request.form.get('phone')
+    photo_file = request.files.get('photo')
+    if not all([name, id_card_number, address, phone, photo_file]):
+        return jsonify({'status': 'error', 'message': 'All fields and photo are required'}), 400
+    driver_id = str(uuid.uuid4())
+    # Save photo
+    if not photo_file or not hasattr(photo_file, 'filename') or not photo_file.filename:
+        return jsonify({'status': 'error', 'message': 'Invalid or missing photo file'}), 400
+    filename = photo_file.filename
+    ext = os.path.splitext(filename)[1]
+    if not ext:
+        return jsonify({'status': 'error', 'message': 'Photo file must have an extension'}), 400
+    photo_filename = f"{driver_id}{ext}"
+    photo_path = os.path.join(PHOTO_UPLOAD_FOLDER, photo_filename)
+    try:
+        photo_file.save(photo_path)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': f'Failed to save photo: {str(e)}'}), 500
+    # Store relative path for serving
+    photo_url = f"/photos/{photo_filename}"
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+            INSERT INTO drivers (id, name, id_card_number, address, phone, photo)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (driver_id, name, id_card_number, address, phone, photo_url))
+        conn.commit()
+        return jsonify({'status': 'ok', 'user_id': driver_id, 'message': 'Driver registered successfully'})
+    except psycopg2.IntegrityError:
+        return jsonify({'status': 'error', 'message': 'Phone number already exists'}), 400
+    finally:
+        conn.close()
+
+# --- Passenger Login ---
+@app.route('/login/passenger', methods=['POST'])
+def login_passenger():
     data = request.json
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-    
     conn = get_db()
     cursor = conn.cursor()
-    
-    cursor.execute('SELECT id, name, user_type, status FROM users WHERE phone = %s', (data['phone'],))
+    cursor.execute('SELECT id, name FROM passengers WHERE phone = %s', (data['phone'],))
     user = cursor.fetchone()
     conn.close()
-    
     if user:
-        return jsonify({
-            'status': 'ok',
-            'user_id': user[0],
-            'name': user[1],
-            'user_type': user[2],
-            'status': user[3]
-        })
+        return jsonify({'status': 'ok', 'user_id': user[0], 'name': user[1]})
     else:
-        return jsonify({
-            'status': 'error',
-            'message': 'User not found'
-        }), 404
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
+
+# --- Driver Login ---
+@app.route('/login/driver', methods=['POST'])
+def login_driver():
+    data = request.json
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name FROM drivers WHERE phone = %s', (data['phone'],))
+    user = cursor.fetchone()
+    conn.close()
+    if user:
+        return jsonify({'status': 'ok', 'user_id': user[0], 'name': user[1]})
+    else:
+        return jsonify({'status': 'error', 'message': 'User not found'}), 404
 
 # API برای تغییر وضعیت راننده
 @app.route('/driver/status', methods=['POST'])
@@ -128,7 +160,7 @@ def update_driver_status():
     conn = get_db()
     cursor = conn.cursor()
     
-    cursor.execute('UPDATE users SET status = %s WHERE id = %s', (data['status'], data['driver_id']))
+    cursor.execute('UPDATE drivers SET status = %s WHERE id = %s', (data['status'], data['driver_id']))
     conn.commit()
     conn.close()
     
@@ -164,8 +196,8 @@ def create_request():
     
     conn = get_db()
     cursor = conn.cursor()
-    # Get passenger phone from users table
-    cursor.execute('SELECT phone FROM users WHERE id = %s', (data['passenger_id'],))
+    # Get passenger phone from passengers table
+    cursor.execute('SELECT phone FROM passengers WHERE id = %s', (data['passenger_id'],))
     phone_row = cursor.fetchone()
     phone = phone_row[0] if phone_row else None
     
@@ -190,9 +222,9 @@ def get_pending_requests():
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT r.id, r.lat, r.lon, r.created_at, u.name as passenger_name
+        SELECT r.id, r.lat, r.lon, r.created_at, p.name as passenger_name
         FROM requests r
-        JOIN users u ON r.passenger_id = u.id
+        JOIN passengers p ON r.passenger_id = p.id
         WHERE r.status = 'pending'
         ORDER BY r.created_at DESC
     ''')
@@ -243,7 +275,7 @@ def accept_request():
     ''', (data['driver_id'], 'accepted', data['request_id']))
     
     # تغییر وضعیت راننده به مشغول
-    cursor.execute('UPDATE users SET status = %s WHERE id = %s', ('busy', data['driver_id']))
+    cursor.execute('UPDATE drivers SET status = %s WHERE id = %s', ('busy', data['driver_id']))
     
     conn.commit()
     conn.close()
@@ -270,7 +302,7 @@ def complete_request():
     ''', ('completed', data['request_id']))
     
     # تغییر وضعیت راننده به آنلاین
-    cursor.execute('UPDATE users SET status = %s WHERE id = %s', ('online', data['driver_id']))
+    cursor.execute('UPDATE drivers SET status = %s WHERE id = %s', ('online', data['driver_id']))
     
     conn.commit()
     conn.close()
@@ -287,9 +319,9 @@ def get_request_status(request_id):
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT r.status, r.driver_id, u.name as driver_name, u.phone as driver_phone
+        SELECT r.status, r.driver_id, d.name as driver_name, d.phone as driver_phone, d.photo as driver_photo
         FROM requests r
-        LEFT JOIN users u ON r.driver_id = u.id
+        LEFT JOIN drivers d ON r.driver_id = d.id
         WHERE r.id = %s
     ''', (request_id,))
     
@@ -302,7 +334,8 @@ def get_request_status(request_id):
             'request_status': result[0],
             'driver_id': result[1],
             'driver_name': result[2],
-            'driver_phone': result[3]
+            'driver_phone': result[3],
+            'driver_photo': result[4]
         })
     else:
         return jsonify({
@@ -317,9 +350,9 @@ def get_driver_active_requests(driver_id):
     cursor = conn.cursor()
     
     cursor.execute('''
-        SELECT r.id, r.lat, r.lon, r.created_at, u.name as passenger_name, u.phone as passenger_phone
+        SELECT r.id, r.lat, r.lon, r.created_at, p.name as passenger_name, p.phone as passenger_phone
         FROM requests r
-        JOIN users u ON r.passenger_id = u.id
+        JOIN passengers p ON r.passenger_id = p.id
         WHERE r.driver_id = %s AND r.status IN (%s, %s)
         ORDER BY r.accepted_at DESC
     ''', (driver_id, 'accepted', 'in_progress'))
@@ -360,7 +393,7 @@ def cancel_request():
     
     # اگر راننده داشت، وضعیتش را به آنلاین برگردان
     cursor.execute('''
-        UPDATE users 
+        UPDATE drivers 
         SET status = %s 
         WHERE id = (SELECT driver_id FROM requests WHERE id = %s)
     ''', ('online', data['request_id']))
@@ -372,6 +405,11 @@ def cancel_request():
         'status': 'ok',
         'message': 'Request cancelled successfully'
     })
+
+# --- Serve Driver Photos ---
+@app.route('/photos/<filename>')
+def serve_photo(filename):
+    return send_from_directory(PHOTO_UPLOAD_FOLDER, filename)
 
 if __name__ == '__main__':
     init_db()
