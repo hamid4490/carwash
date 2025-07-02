@@ -12,7 +12,7 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-DATABASE_URL = os.environ.get('postgresql://database_xjpy_user:DP7GKYtBYsMbU4F2h1VLiNyBYBzP99PN@dpg-d1ifunmr433s73ai8pa0-a/database_xjpy')
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.DictCursor)
