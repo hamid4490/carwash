@@ -38,6 +38,7 @@ def init_db():
             address TEXT,
             phone TEXT UNIQUE,
             photo TEXT,
+            is_verified BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     ''')
@@ -109,9 +110,9 @@ def register_driver():
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            INSERT INTO drivers (id, name, id_card_number, address, phone, photo)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (driver_id, name, id_card_number, address, phone, photo_url))
+            INSERT INTO drivers (id, name, id_card_number, address, phone, photo, is_verified)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (driver_id, name, id_card_number, address, phone, photo_url, False))
         conn.commit()
         return jsonify({'status': 'ok', 'user_id': driver_id, 'message': 'Driver registered successfully'})
     except psycopg2.IntegrityError:
@@ -245,34 +246,33 @@ def accept_request():
     data = request.json
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
-    
     conn = get_db()
     cursor = conn.cursor()
-    
+    # بررسی احراز هویت راننده
+    cursor.execute('SELECT is_verified FROM drivers WHERE id = %s', (data['driver_id'],))
+    verified_row = cursor.fetchone()
+    if not verified_row or not verified_row[0]:
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Driver is not verified'}), 403
     # بررسی اینکه درخواست هنوز در انتظار است
     cursor.execute('SELECT status FROM requests WHERE id = %s', (data['request_id'],))
     request_status = cursor.fetchone()
-    
     if not request_status or request_status[0] != 'pending':
         conn.close()
         return jsonify({
             'status': 'error',
             'message': 'Request not available'
         }), 400
-    
     # پذیرش درخواست
     cursor.execute('''
         UPDATE requests 
         SET driver_id = %s, status = %s, accepted_at = CURRENT_TIMESTAMP
         WHERE id = %s
     ''', (data['driver_id'], 'accepted', data['request_id']))
-    
     # تغییر وضعیت راننده به مشغول
     cursor.execute('UPDATE drivers SET status = %s WHERE id = %s', ('busy', data['driver_id']))
-    
     conn.commit()
     conn.close()
-    
     return jsonify({
         'status': 'ok',
         'message': 'Request accepted successfully'
