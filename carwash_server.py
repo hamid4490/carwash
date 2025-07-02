@@ -51,7 +51,8 @@ def init_db():
             status TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             accepted_at TIMESTAMP,
-            completed_at TIMESTAMP
+            completed_at TIMESTAMP,
+            phone TEXT
         );
     ''')
     conn.commit()
@@ -193,27 +194,19 @@ def create_request():
     if not data:
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
     request_id = str(uuid.uuid4())
-    
     conn = get_db()
     cursor = conn.cursor()
     # Get passenger phone from passengers table
     cursor.execute('SELECT phone FROM passengers WHERE id = %s', (data['passenger_id'],))
     phone_row = cursor.fetchone()
     phone = phone_row[0] if phone_row else None
-    
     cursor.execute('''
         INSERT INTO requests (id, passenger_id, lat, lon, status, phone)
         VALUES (%s, %s, %s, %s, %s, %s)
     ''', (request_id, data['passenger_id'], data['lat'], data['lon'], 'pending', phone))
-    
     conn.commit()
     conn.close()
-    
-    return jsonify({
-        'status': 'ok',
-        'request_id': request_id,
-        'message': 'Request created successfully'
-    })
+    return jsonify({'status': 'ok', 'request_id': request_id, 'message': 'Request created successfully'})
 
 # API برای دریافت درخواست‌های در انتظار (برای رانندگان)
 @app.route('/requests/pending', methods=['GET'])
