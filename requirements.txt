@@ -1,0 +1,7 @@
+Flask
+Flask-CORS
+requests
+kivy
+kivy-garden
+plyer
+psycopg2-binary
