@@ -41,6 +41,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             accepted_at TIMESTAMP,
             completed_at TIMESTAMP,
+            phone TEXT,
             FOREIGN KEY (passenger_id) REFERENCES users (id),
             FOREIGN KEY (driver_id) REFERENCES users (id)
         );
@@ -163,11 +164,15 @@ def create_request():
     
     conn = get_db()
     cursor = conn.cursor()
+    # Get passenger phone from users table
+    cursor.execute('SELECT phone FROM users WHERE id = %s', (data['passenger_id'],))
+    phone_row = cursor.fetchone()
+    phone = phone_row[0] if phone_row else None
     
     cursor.execute('''
-        INSERT INTO requests (id, passenger_id, lat, lon, status)
-        VALUES (%s, %s, %s, %s, %s)
-    ''', (request_id, data['passenger_id'], data['lat'], data['lon'], 'pending'))
+        INSERT INTO requests (id, passenger_id, lat, lon, status, phone)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (request_id, data['passenger_id'], data['lat'], data['lon'], 'pending', phone))
     
     conn.commit()
     conn.close()
