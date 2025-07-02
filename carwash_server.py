@@ -201,9 +201,9 @@ def create_request():
     phone_row = cursor.fetchone()
     phone = phone_row[0] if phone_row else None
     cursor.execute('''
-        INSERT INTO requests (id, passenger_id, lat, lon, status)
-        VALUES (%s, %s, %s, %s, %s)
-    ''', (request_id, data['passenger_id'], data['lat'], data['lon'], 'pending'))
+        INSERT INTO requests (id, passenger_id, lat, lon, status, phone)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    ''', (request_id, data['passenger_id'], data['lat'], data['lon'], 'pending', phone))
     conn.commit()
     conn.close()
     return jsonify({'status': 'ok', 'request_id': request_id, 'message': 'Request created successfully'})
