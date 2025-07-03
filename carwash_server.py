@@ -394,6 +394,37 @@ def cancel_request():
 def serve_photo(filename):
     return send_from_directory(PHOTO_UPLOAD_FOLDER, filename)
 
+# --- Admin: Get driver by phone ---
+@app.route('/admin/driver_by_phone/<phone>', methods=['GET'])
+def get_driver_by_phone(phone):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id, name, phone, id_card_number, address FROM drivers WHERE phone = %s', (phone,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        return jsonify({'status': 'ok', 'driver': {
+            'id': row[0], 'name': row[1], 'phone': row[2], 'id_card_number': row[3], 'address': row[4]
+        }})
+    else:
+        return jsonify({'status': 'error', 'message': 'Driver not found'}), 404
+
+# --- Admin: Verify driver ---
+@app.route('/admin/verify_driver', methods=['POST'])
+def verify_driver():
+    data = request.json
+    if not data or not data.get('driver_id') or not data.get('id_card_number') or not data.get('address'):
+        return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+        UPDATE drivers SET id_card_number = %s, address = %s, is_verified = TRUE
+        WHERE id = %s
+    ''', (data['id_card_number'], data['address'], data['driver_id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok', 'message': 'Driver verified successfully'})
+
 if __name__ == '__main__':
     init_db()
     app.run(debug=True, host='0.0.0.0', port=5000)
