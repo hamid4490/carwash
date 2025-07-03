@@ -145,6 +145,13 @@ def update_driver_status():
     conn = get_db()
     cursor = conn.cursor()
     
+    # بررسی احراز هویت راننده
+    cursor.execute('SELECT is_verified FROM drivers WHERE id = %s', (data['driver_id'],))
+    verified_row = cursor.fetchone()
+    if not verified_row or not verified_row[0]:
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Driver is not verified'}), 403
+    
     cursor.execute('UPDATE drivers SET status = %s WHERE id = %s', (data['status'], data['driver_id']))
     conn.commit()
     conn.close()
