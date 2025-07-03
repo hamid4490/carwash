@@ -331,15 +331,14 @@ def get_request_status(request_id):
 def get_driver_active_requests(driver_id):
     conn = get_db()
     cursor = conn.cursor()
-    
     cursor.execute('''
-        SELECT r.id, r.lat, r.lon, r.created_at, p.name as passenger_name, p.phone as passenger_phone
+        SELECT r.id, r.lat, r.lon, r.created_at, p.name as passenger_name, p.phone as passenger_phone, r.status
         FROM requests r
         JOIN passengers p ON r.passenger_id = p.id
         WHERE r.driver_id = %s AND r.status IN (%s, %s)
         ORDER BY r.accepted_at DESC
+        LIMIT 1
     ''', (driver_id, 'accepted', 'in_progress'))
-    
     requests = []
     for row in cursor.fetchall():
         requests.append({
@@ -348,11 +347,10 @@ def get_driver_active_requests(driver_id):
             'lon': row[2],
             'created_at': row[3],
             'passenger_name': row[4],
-            'passenger_phone': row[5]
+            'passenger_phone': row[5],
+            'status': row[6]
         })
-    
     conn.close()
-    
     return jsonify({
         'status': 'ok',
         'requests': requests
@@ -388,6 +386,29 @@ def cancel_request():
         'status': 'ok',
         'message': 'Request cancelled successfully'
     })
+
+# API برای رسیدن راننده به محل
+@app.route('/request/arrive', methods=['POST'])
+def arrive_request():
+    data = request.json
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    conn = get_db()
+    cursor = conn.cursor()
+    # فقط راننده‌ای که درخواست را قبول کرده می‌تواند این کار را انجام دهد
+    cursor.execute('SELECT driver_id, status FROM requests WHERE id = %s', (data['request_id'],))
+    row = cursor.fetchone()
+    if not row or row[0] != data['driver_id'] or row[1] != 'accepted':
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Not allowed'}), 403
+    cursor.execute('''
+        UPDATE requests 
+        SET status = %s
+        WHERE id = %s
+    ''', ('in_progress', data['request_id']))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok', 'message': 'Driver arrived, request in progress'})
 
 # --- Serve Driver Photos ---
 @app.route('/photos/<filename>')
