@@ -418,12 +418,13 @@ def verify_driver():
     photo_file = request.files.get('photo')
     if not all([id_card_number, address, driver_id, photo_file]):
         return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
-    # Save photo
+    # Save photo as <driver_id>.jpg
     photo_filename = f"{driver_id}.jpg"
     photo_path = os.path.join(PHOTO_UPLOAD_FOLDER, photo_filename)
-    if photo_file is None:
+    if photo_file is not None:
+        photo_file.save(photo_path)
+    else:
         return jsonify({'status': 'error', 'message': 'No photo uploaded'}), 400
-    photo_file.save(photo_path)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
