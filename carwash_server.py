@@ -395,20 +395,26 @@ def arrive_request():
         return jsonify({'status': 'error', 'message': 'No data provided'}), 400
     conn = get_db()
     cursor = conn.cursor()
-    # فقط راننده‌ای که درخواست را قبول کرده می‌تواند این کار را انجام دهد
     cursor.execute('SELECT driver_id, status FROM requests WHERE id = %s', (data['request_id'],))
     row = cursor.fetchone()
-    if not row or row[0] != data['driver_id'] or row[1] != 'accepted':
+    if not row or row[0] != data['driver_id']:
         conn.close()
         return jsonify({'status': 'error', 'message': 'Not allowed'}), 403
-    cursor.execute('''
-        UPDATE requests 
-        SET status = %s
-        WHERE id = %s
-    ''', ('in_progress', data['request_id']))
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'ok', 'message': 'Driver arrived, request in progress'})
+    if row[1] == 'accepted':
+        cursor.execute('''
+            UPDATE requests 
+            SET status = %s
+            WHERE id = %s
+        ''', ('in_progress', data['request_id']))
+        conn.commit()
+        conn.close()
+        return jsonify({'status': 'ok', 'message': 'Driver arrived, request in progress'})
+    elif row[1] == 'in_progress':
+        conn.close()
+        return jsonify({'status': 'ok', 'message': 'Driver already arrived'})
+    else:
+        conn.close()
+        return jsonify({'status': 'error', 'message': 'Not allowed'}), 403
 
 # --- Serve Driver Photos ---
 @app.route('/photos/<filename>')
