@@ -83,36 +83,19 @@ def register_passenger():
 # --- Driver Registration (with photo upload) ---
 @app.route('/register/driver', methods=['POST'])
 def register_driver():
-    name = request.form.get('name')
-    id_card_number = request.form.get('id_card_number')
-    address = request.form.get('address')
-    phone = request.form.get('phone')
-    photo_file = request.files.get('photo')
-    if not all([name, id_card_number, address, phone, photo_file]):
-        return jsonify({'status': 'error', 'message': 'All fields and photo are required'}), 400
+    data = request.json
+    if not data:
+        return jsonify({'status': 'error', 'message': 'No data provided'}), 400
+    if not data.get('name') or not data.get('phone'):
+        return jsonify({'status': 'error', 'message': 'Name and phone are required'}), 400
     driver_id = str(uuid.uuid4())
-    # Save photo
-    if not photo_file or not hasattr(photo_file, 'filename') or not photo_file.filename:
-        return jsonify({'status': 'error', 'message': 'Invalid or missing photo file'}), 400
-    filename = photo_file.filename
-    ext = os.path.splitext(filename)[1]
-    if not ext:
-        return jsonify({'status': 'error', 'message': 'Photo file must have an extension'}), 400
-    photo_filename = f"{driver_id}{ext}"
-    photo_path = os.path.join(PHOTO_UPLOAD_FOLDER, photo_filename)
-    try:
-        photo_file.save(photo_path)
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': f'Failed to save photo: {str(e)}'}), 500
-    # Store relative path for serving
-    photo_url = f"/photos/{photo_filename}"
     conn = get_db()
     cursor = conn.cursor()
     try:
         cursor.execute('''
             INSERT INTO drivers (id, name, id_card_number, address, phone, photo, is_verified)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (driver_id, name, id_card_number, address, phone, photo_url, False))
+        ''', (driver_id, data['name'], 'pending', 'pending', data['phone'], '', False))
         conn.commit()
         return jsonify({'status': 'ok', 'user_id': driver_id, 'message': 'Driver registered successfully'})
     except psycopg2.IntegrityError:
