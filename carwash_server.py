@@ -412,15 +412,24 @@ def get_driver_by_phone(phone):
 # --- Admin: Verify driver ---
 @app.route('/admin/verify_driver', methods=['POST'])
 def verify_driver():
-    data = request.json
-    if not data or not data.get('driver_id') or not data.get('id_card_number') or not data.get('address'):
+    id_card_number = request.form.get('id_card_number')
+    address = request.form.get('address')
+    driver_id = request.form.get('driver_id')
+    photo_file = request.files.get('photo')
+    if not all([id_card_number, address, driver_id, photo_file]):
         return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
+    # Save photo
+    photo_filename = f"{driver_id}.jpg"
+    photo_path = os.path.join(PHOTO_UPLOAD_FOLDER, photo_filename)
+    if photo_file is None:
+        return jsonify({'status': 'error', 'message': 'No photo uploaded'}), 400
+    photo_file.save(photo_path)
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE drivers SET id_card_number = %s, address = %s, is_verified = TRUE
         WHERE id = %s
-    ''', (data['id_card_number'], data['address'], data['driver_id']))
+    ''', (id_card_number, address, driver_id))
     conn.commit()
     conn.close()
     return jsonify({'status': 'ok', 'message': 'Driver verified successfully'})
